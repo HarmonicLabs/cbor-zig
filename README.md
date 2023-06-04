@@ -123,6 +123,9 @@ pub const Cbor = struct {
 
     /// encodes the CBOR as bytes; the caller has ownership of the result
     pub fn encode( self: *Self, allocator: Allocator ) Allocator.Error![]u8
+
+    // to read the `_size` value (always defined)
+    pub fn size( self: *Self ) usize
 };
 ```
 
