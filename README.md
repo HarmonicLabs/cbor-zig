@@ -77,7 +77,7 @@ Then add the following line to your `build.zig` file.
 ```zig
 // Create a new module
 var cbor_zig_module = b.createModule(.{
-    .source_file = .{ .path = "libs/cbor_zig/src/main.zig" },
+    .source_file = .{ .path = "libs/cbor_zig/src/index.zig" },
 });
 
 // create your exe ...
