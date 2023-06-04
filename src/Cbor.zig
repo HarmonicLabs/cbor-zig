@@ -165,14 +165,6 @@ const CborParser = struct {
         return CborParserError.InvalidAddtionalInfos;
     }
 
-    // fn getIndefiniteElemLengthOfType( self: *Self, majorType: MajorType ) CborLen
-    // {
-    //     _ = majorType;
-    //     const headerByte = self.getUint8();
-    //     if(  )
-    //     return self.getCborLen( @truncate( u5, headerByte ) );
-    // }
-
     fn parseObj( self: *Self, allocator: Allocator ) CborParserError ! CborValue
     {
         const header = self.getUint8();
@@ -312,7 +304,7 @@ pub const CborValue = union(CborEnum) {
             .uint => {},
             .negint => {},
             .bytes => {},
-            .text => {},
+            .text  => {},
             .array => |cbor_arr| allocator.free( cbor_arr.array ),
             .map => |cbor_map| allocator.free( cbor_map.map ),
             .tag => {},
