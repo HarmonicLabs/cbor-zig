@@ -1,22 +1,14 @@
 const std = @import("std");
-
 const Allocator = std.mem.Allocator;
 
-const CborEnum = enum {
-    UInt,
-    NegInt,
-    Bytes,
-    Text,
-    Array,
-    Map,
-    Tag,
-    Simple
-};
+const MajorType = @import("./CborMajorType.zig").MajorType;
 
-pub const CborMapEntry = struct {
-    k: *Cbor,
-    v: *Cbor
-};
+const bl = @import("./ByteList.zig");
+const ByteList = bl.ByteList;
+const appendTypeAndLength = bl.appendTypeAndLength;
+const appendBytes = bl.appendBytes;
+const appendUint8 = bl.appendUint8;
+const appendFloat64 = bl.appendFloat64;
 
 pub const CborTag = struct {
     tag: u64,
@@ -30,143 +22,14 @@ pub const CborSimpleValue = union(enum) {
     float: f64
 };
 
-const MajorType = enum(u3) {
-    unsigned,
-    negative,
-    bytes,
-    text,
-    array,
-    map,
-    tag,
-    float_or_simple,
-
-    const Self = @This();
-    fn toNumber( self: Self ) u8
-    {
-        return switch ( self )
-        {
-            .unsigned           => 0,
-            .negative           => 1,
-            .bytes              => 2,
-            .text               => 3,
-            .array              => 4,
-            .map                => 5,
-            .tag                => 6,
-            .float_or_simple    => 7
-        };
-    }
-
-    fn fromNumber( n: u3 ) Self
-    {
-        return switch ( n )
-        {
-            0 => Self.unsigned,
-            1 => Self.negative,
-            2 => Self.bytes,
-            3 => Self.text,
-            4 => Self.array,
-            5 => Self.map,
-            6 => Self.tag,
-            7 => Self.float_or_simple
-        };
-    }
+pub const CborArray = struct {
+    array: []*Cbor,
+    indefinite: bool = false
 };
 
-const ByteList = std.ArrayList( u8 );
-
-fn appendUint8( bytes: *ByteList, n: u8 ) Allocator.Error!void
-{
-    try bytes.append( n );
-}
-
-fn appendUint16( bytes: *ByteList, n: u16 ) Allocator.Error!void
-{
-    try bytes.appendSlice(
-        &[2]u8 {
-            @truncate( u8, (n & 0xff00) >> 8 ),
-            @truncate( u8, n & 0xff )
-        }
-    );
-}
-
-fn appendUint32( bytes: *ByteList, n: u32 ) Allocator.Error!void
-{
-    try bytes.appendSlice(
-        &[4]u8 {
-            @truncate( u8, (n & 0xff_00_00_00) >> 24 ),
-            @truncate( u8, (n & 0x00_ff_00_00) >> 16 ),
-            @truncate( u8, (n & 0x00_00_ff_00) >> 8  ),
-            @truncate( u8,  n & 0x00_00_00_ff        )
-        }
-    );
-}
-
-fn appendUint64( bytes: *ByteList, n: u64 ) Allocator.Error!void
-{
-    try bytes.appendSlice(
-        &[8]u8 {
-            @truncate( u8, (n & 0xff_00_00_00_00_00_00_00) >> 56 ),
-            @truncate( u8, (n & 0x00_ff_00_00_00_00_00_00) >> 48 ),
-            @truncate( u8, (n & 0x00_00_ff_00_00_00_00_00) >> 40 ),
-            @truncate( u8, (n & 0x00_00_00_ff_00_00_00_00) >> 32 ),
-            @truncate( u8, (n & 0x00_00_00_00_ff_00_00_00) >> 24 ),
-            @truncate( u8, (n & 0x00_00_00_00_00_ff_00_00) >> 16 ),
-            @truncate( u8, (n & 0x00_00_00_00_00_00_ff_00) >> 8  ),
-            @truncate( u8, (n & 0x00_00_00_00_00_00_00_ff)       ),
-        }
-    );
-}
-
-fn appendFloat64( bytes: *ByteList, f: f64 ) Allocator.Error!void
-{
-    try appendUint64( bytes, @bitCast( u64, f ) );
-}
-
-fn appendBytes( bytes: *ByteList, toAppend: []u8 ) Allocator.Error!void
-{
-    try bytes.appendSlice( toAppend );
-}
-
-fn appendTypeAndLength( bytes: *ByteList, majorType: MajorType, length: u64 ) Allocator.Error!void
-{
-    const n: u8 = majorType.toNumber() << 5;
-
-    if( length > 0xffff_ffff )
-    {
-        try appendUint8( bytes, n | 27 );
-        try appendUint64( bytes, length );
-        return;
-    }
-
-    if( length < 24 )
-    {
-        try appendUint8( bytes, n | @truncate( u8, length & 0xff ) );
-        return;
-    }
-
-    if( length < 0x100 )
-    {
-        try appendUint8( bytes, n | 24 );
-        try appendUint8( bytes, @truncate( u8, length ) );
-        return;
-    }
-
-    if( length < 0x10000 )
-    {
-        try appendUint8( bytes, n | 25 );
-        try appendUint16( bytes, @truncate( u16, length ) );
-        return;
-    }
-
-    // if (length < 0x100000000)
-    try appendUint8( bytes, n | 26 );
-    try appendUint32( bytes, @truncate( u32, length ) );
-    return;
-}
-
-pub const CborArray = struct {
-    array: [] const *Cbor,
-    indefinite: bool = false
+pub const CborMapEntry = struct {
+    k: *Cbor,
+    v: *Cbor
 };
 
 pub const CborMap = struct {
@@ -265,7 +128,7 @@ const CborParser = struct {
         //     exponent += (127 - 15) << 10
         // else if (fraction != 0)
         //     return Cbor{
-        //         .Simple = CborSimpleValue{
+        //         .simple = CborSimpleValue{
         //             .float = 
         //                 (if( sign != 0) -1 else 1)
         //                 * fraction 
@@ -310,7 +173,7 @@ const CborParser = struct {
     //     return self.getCborLen( @truncate( u5, headerByte ) );
     // }
 
-    fn parseObj( self: *Self, allocator: Allocator ) CborParserError ! Cbor
+    fn parseObj( self: *Self, allocator: Allocator ) CborParserError ! CborValue
     {
         const header = self.getUint8();
         const major = MajorType.fromNumber( @truncate( u3, header >> 5 ) );
@@ -319,17 +182,19 @@ const CborParser = struct {
 
         return switch( major )
         {
-            .unsigned =>    if (len) |n| Cbor{ .UInt = n }   else CborParserError.UnexpectedIndefiniteLength,
-            .negative =>    if (len) |n| Cbor{ .NegInt = n } else CborParserError.UnexpectedIndefiniteLength,
-            .bytes =>       if (len) |l| Cbor{ .Bytes = self.getBytesOfLength( l ) } else unreachable, // TODO unreachable
-            .text =>        if (len) |l| Cbor{ .Text  = self.getBytesOfLength( l ) } else unreachable, // TODO unreachable,
+            .unsigned =>    if (len) |n| CborValue{ .uint = n }   else CborParserError.UnexpectedIndefiniteLength,
+            .negative =>    if (len) |n| CborValue{ .negint = n } else CborParserError.UnexpectedIndefiniteLength,
+            .bytes =>       if (len) |l| CborValue{ .bytes = self.getBytesOfLength( l ) } else unreachable, // TODO this is not unreachable; I'm just lazy
+            .text =>        if (len) |l| CborValue{ .text  = self.getBytesOfLength( l ) } else unreachable, // TODO this is not unreachable; I'm just lazy
             .array => {
                 var arr = PtrCborArrList.initCapacity( allocator, len orelse 16 ) catch return CborParserError.AllocatorOutOfMemory;
                 if( len ) |_|
                 {
                     for (arr.items) |_|
                     {
-                        var tmp = try self.parseObj( allocator);
+                        var tmp = Cbor{
+                            .value = try self.parseObj( allocator )
+                        };
                         arr.append( &tmp ) catch return CborParserError.AllocatorOutOfMemory;
                     }
                 }
@@ -337,12 +202,14 @@ const CborParser = struct {
                 {
                     while ( !self.incrementIfBreak() )
                     {
-                        var tmp = try self.parseObj( allocator);
+                        var tmp = Cbor{
+                            .value = try self.parseObj( allocator )
+                        };
                         arr.append( &tmp ) catch return CborParserError.AllocatorOutOfMemory;
                     }
                 }
-                return Cbor{
-                    .Array = CborArray{
+                return CborValue{
+                    .array = CborArray{
                         .array = arr.toOwnedSlice() 
                     }
                 };
@@ -354,8 +221,8 @@ const CborParser = struct {
                     _ = l;
                     for (map.items) |_|
                     {
-                        var tmpk = try self.parseObj( allocator );
-                        var tmpv = try self.parseObj( allocator );
+                        var tmpk = Cbor{ .value = try self.parseObj( allocator ) };
+                        var tmpv = Cbor{ .value = try self.parseObj( allocator ) };
                         var tmp = CborMapEntry{
                             .k = &tmpk,
                             .v = &tmpv
@@ -367,8 +234,8 @@ const CborParser = struct {
                 {
                     while ( !self.incrementIfBreak() )
                     {
-                        var tmpk = try self.parseObj( allocator );
-                        var tmpv = try self.parseObj( allocator );
+                        var tmpk = Cbor{ .value = try self.parseObj( allocator ) };
+                        var tmpv = Cbor{ .value = try self.parseObj( allocator ) };
                         var tmp = CborMapEntry{
                             .k = &tmpk,
                             .v = &tmpv
@@ -376,8 +243,8 @@ const CborParser = struct {
                         map.append( tmp ) catch return CborParserError.AllocatorOutOfMemory;
                     }
                 }
-                return Cbor{
-                    .Map = CborMap{
+                return CborValue{
+                    .map = CborMap{
                         .map = map.toOwnedSlice()
                     }
                 };
@@ -385,9 +252,9 @@ const CborParser = struct {
             .tag =>
                 if( len ) |l|
                 {
-                    var tmp = try self.parseObj( allocator );
-                    return Cbor{ 
-                        .Tag = CborTag{ 
+                    var tmp = Cbor{ .value = try self.parseObj( allocator ) };
+                    return CborValue{ 
+                        .tag = CborTag{ 
                             .tag = l, 
                             .data = &tmp
                         }
@@ -397,13 +264,13 @@ const CborParser = struct {
             .float_or_simple => 
                 if( len ) |l| 
                 {
-                    if( l == 20 ) return Cbor{ .Simple = CborSimpleValue{ .boolean = false } };
-                    if( l == 21 ) return Cbor{ .Simple = CborSimpleValue{ .boolean = true } };
-                    if( l == 22 ) return Cbor{ .Simple = CborSimpleValue{ .null = null } };
-                    if( l == 23 ) return Cbor{ .Simple = CborSimpleValue{ .undefined = null } };
-                    if( l == 25 ) return Cbor{ .Simple = CborSimpleValue{ .float = self.getFloat16() } };
-                    if( l == 26 ) return Cbor{ .Simple = CborSimpleValue{ .float = self.getFloat32() } };
-                    if( l == 27 ) return Cbor{ .Simple = CborSimpleValue{ .float = self.getFloat64() } };
+                    if( l == 20 ) return CborValue{ .simple = CborSimpleValue{ .boolean = false } };
+                    if( l == 21 ) return CborValue{ .simple = CborSimpleValue{ .boolean = true } };
+                    if( l == 22 ) return CborValue{ .simple = CborSimpleValue{ .null = null } };
+                    if( l == 23 ) return CborValue{ .simple = CborSimpleValue{ .undefined = null } };
+                    if( l == 25 ) return CborValue{ .simple = CborSimpleValue{ .float = self.getFloat16() } };
+                    if( l == 26 ) return CborValue{ .simple = CborSimpleValue{ .float = self.getFloat32() } };
+                    if( l == 27 ) return CborValue{ .simple = CborSimpleValue{ .float = self.getFloat64() } };
                     return CborParserError.UnexpectedIndefiniteLength;
                 }
                 else return CborParserError.UnexpectedIndefiniteLength,
@@ -412,44 +279,154 @@ const CborParser = struct {
     }
 };
 
-pub const Cbor = union(CborEnum) {
-    UInt: u64,
-    NegInt: u64,
-    Bytes: []u8,
-    Text: []u8,
-    Array: CborArray,
-    Map: CborMap,
-    Tag: CborTag,
-    Simple: CborSimpleValue,
+const CborEnum = enum {
+    uint,
+    negint,
+    bytes,
+    text,
+    array,
+    map,
+    tag,
+    simple
+};
+
+pub const CborValue = union(CborEnum) {
+    uint: u64,
+    negint: u64,
+    bytes: []u8,
+    text: []u8,
+    array: CborArray,
+    map: CborMap,
+    tag: CborTag,
+    simple: CborSimpleValue,
 
     const Self = @This();
+
+    pub fn free( self: *Self, allocator: Allocator ) void
+    {
+        switch ( self )
+        {
+            Self.uint => {},
+            Self.negint => {},
+            Self.bytes => {},
+            Self.text => {},
+            Self.array => |cbor_arr| allocator.free( cbor_arr.array ),
+            Self.map => {},
+            Self.tag => {},
+            Self.simple => {},
+        }
+    }
+};
+
+pub const Cbor = struct {
+    /// modifying this field might cause undefined behaviour
+    /// **readonly**
+    value: CborValue,
+    /// modifying this field might cause undefined behaviour
+    /// use `size()` to read
+    _size: ?u64 = null,
+
+    const Self = @This();
+
+    fn init( value: CborValue ) Self
+    {
+        return Self{
+            .value = value,
+            ._size = switch (value)
+            {
+                .uint =>    |n| getCborNumSize( n ),
+                .negint =>  |n| getCborNumSize( n ),
+                .bytes =>   |b| getCborNumSize( b.len ) + b.len,
+                .text =>    |t| getCborNumSize( t.len ) + t.len,
+                else => null
+            }
+        };
+    }
+
+    fn uint( value: u64 ) Self
+    {
+        return Self{
+            .value = .{ .uint = value },
+            ._size = getCborNumSize( value )
+        };
+    }
+
+    fn negint( value: u64 ) Self
+    {
+        return Self{
+            .value = .{ .negint = value },
+            .size  = getCborNumSize( value )
+        };
+    }
+
+    fn bytes( value: []u8 ) Self
+    {
+        return Self{
+            .value = .{ .bytes = value },
+            .size  = getCborNumSize( value.len ) + value.len
+        };
+    }
+
+    fn text( value: []u8 ) Self
+    {
+        return Self{
+            .value = .{ .text = value },
+            .size  = getCborNumSize( value.len ) + value.len
+        };
+    }
+
+    fn array( value: []*Cbor ) Self
+    {
+        return Self.init(.{ .array = CborArray{ .array = value } });
+    }
+
+    fn map( value: []CborMapEntry ) Self
+    {
+        return Self.init(.{ .map = CborMap{ .map = value } });
+    }
+
+    fn tag( value: CborTag ) Self
+    {
+        return Self.init(.{ .tag = value });
+    }
+
+    fn simple( value: CborSimpleValue ) Self
+    {
+        return Self.init(.{ .simple = value });
+    }
 
     fn parse( cbor: []u8, allocator: Allocator ) CborParserError!Self
     {
         var parser = CborParser.init( cbor );
-        return try parser.parseObj( allocator );
+        return Self{
+            .value = try parser.parseObj( allocator ),
+            ._size = cbor.len + (cbor.len / 10)
+        };
     }
 
-    fn encode( self: Self, allocator: std.mem.Allocator ) Allocator.Error![]u8
+    fn encode( self: *Self, allocator: Allocator ) Allocator.Error![]u8
     {
+        // needs to be a `ArrayList(u8)` even if we know the size because
+        // anyone whom uses the Cbor class *might* (even if they shouldn't)
+        // modify the `_size` protpery
         var result = try ByteList.initCapacity( allocator, self.size() );
         defer result.deinit();
 
         const resultRef = &result;
 
-        switch ( self )
+        switch ( self.value )
         {
-            .UInt => |n| try appendTypeAndLength( resultRef, MajorType.unsigned, n ),
-            .NegInt => |n| try appendTypeAndLength( resultRef, MajorType.negative, n ),
-            .Bytes => |bs| {
+            .uint => |n|   try appendTypeAndLength( resultRef, MajorType.unsigned, n ),
+            .negint => |n| try appendTypeAndLength( resultRef, MajorType.negative, n ),
+            .bytes => |bs| {
                 try appendTypeAndLength( resultRef, MajorType.bytes, bs.len );
                 try appendBytes( resultRef, bs );
             },
-            .Text => |text| {
-                try appendTypeAndLength( resultRef, MajorType.text, text.len );
-                try appendBytes( resultRef,text );
+            .text => |txt| {
+                try appendTypeAndLength( resultRef, MajorType.text, txt.len );
+                try appendBytes( resultRef, txt );
             },
-            .Array => |cborArr| {
+            .array => |cborArr| {
                 const arr = cborArr.array;
 
                 if( cborArr.indefinite )
@@ -458,31 +435,31 @@ pub const Cbor = union(CborEnum) {
                     try appendTypeAndLength( resultRef, MajorType.array, arr.len );
 
                 for( arr ) | cbor | {
-                    try appendBytes( resultRef,try cbor.encode( allocator )  );
+                    try appendBytes( resultRef, try cbor.encode( allocator )  );
                 }
 
                 if( cborArr.indefinite ) try appendUint8( resultRef,0xff );
             },
-            .Map => |cborMap| {
-                const map = cborMap.map;
+            .map => |cborMap| {
+                const mp = cborMap.map;
                 
                 if( cborMap.indefinite )
                     try appendUint8( resultRef,0xbf )
                 else 
-                    try appendTypeAndLength( resultRef, MajorType.map, map.len );
+                    try appendTypeAndLength( resultRef, MajorType.map, mp.len );
 
-                for( map ) |entry| {
+                for( mp ) |entry| {
                     try appendBytes( resultRef,try entry.k.encode( allocator ) );
                     try appendBytes( resultRef,try entry.v.encode( allocator ) );
                 }
 
                 if( cborMap.indefinite ) try appendUint8( resultRef,0xff );
             },
-            .Tag => |tag| {
-                try appendTypeAndLength( resultRef, MajorType.tag, tag.tag );
-                try appendBytes( resultRef,try tag.data.encode( allocator ) );
+            .tag => |t| {
+                try appendTypeAndLength( resultRef, MajorType.tag, t.tag );
+                try appendBytes( resultRef,try t.data.encode( allocator ) );
             },
-            .Simple => |simp| {
+            .simple => |simp| {
                 switch( simp )
                 {
                     .boolean => |b| if (b) try appendUint8( resultRef, 0xf5 ) else try appendUint8( resultRef,0xf4 ),
@@ -500,15 +477,17 @@ pub const Cbor = union(CborEnum) {
         return slice;
     }
 
-    fn size( self: Self ) usize
+    fn size( self: *Self ) usize
     {
-        return switch( self )
+        if( self._size ) |sz| return sz;
+
+        self._size = switch( self.value )
         {
-            .UInt => | n | getCborNumSize( n ),
-            .NegInt => | n | getCborNumSize( n ),
-            .Bytes => | b | getCborNumSize( b.len ) + b.len,
-            .Text => |text| getCborNumSize( text.len ) + text.len,
-            .Array => |cborArr| {
+            .uint => | n | getCborNumSize( n ),
+            .negint => | n | getCborNumSize( n ),
+            .bytes => | b | getCborNumSize( b.len ) + b.len,
+            .text => |txt| getCborNumSize( txt.len ) + txt.len,
+            .array => |cborArr| blk: {
                 
                 var s: usize = 0;
 
@@ -517,9 +496,9 @@ pub const Cbor = union(CborEnum) {
 
                 for( cborArr.array ) |cbor| s += cbor.size();
 
-                return s;
+                break :blk s;
             },
-            .Map => |cborMap| {
+            .map => |cborMap| blk: {
                 var s: usize = 0;
 
                 if( cborMap.indefinite ) s += 2 // indefinite byte + 0xff marker
@@ -530,19 +509,19 @@ pub const Cbor = union(CborEnum) {
                     s += entry.k.size() + entry.v.size();
                 }
 
-                return s;
+                break :blk s;
             },
-            .Tag => |tag| getCborNumSize( tag.tag ) + tag.data.size(),
-            .Simple => |simp| {
-                return switch( simp )
-                {
-                    .boolean => 1,
-                    .undefined => 1,
-                    .null => 1,
-                    .float => 9
-                };
+            .tag => |t| getCborNumSize( t.tag ) + t.data.size(),
+            .simple => |simp| switch( simp )
+            {
+                .boolean => 1,
+                .undefined => 1,
+                .null => 1,
+                .float => 9
             }
         };
+
+        return self._size orelse unreachable;
     }
 };
 
@@ -558,7 +537,7 @@ fn getCborNumSize( n: u64 ) usize
 const expect = std.testing.expect;
 
 test "simple int" {
-    const cbor = Cbor{ .UInt = 23 };
+    var cbor = Cbor.init(.{ .uint = 23 });
 
     std.debug.print("\n{d}\n", .{ cbor.size() });
 
@@ -571,22 +550,16 @@ test "simple int" {
     const parsed = try Cbor.parse( encoded, std.testing.allocator );
     
     try expect(
-        switch (parsed)
+        switch (parsed.value)
         {
-            .UInt => |n| n == 23,
-            .NegInt => false,
-            .Bytes => false,
-            .Text => false,
-            .Array => false,
-            .Map => false,
-            .Tag => false,
-            .Simple => false,
+            .uint => |n| n == 23,
+            else => false
         }
     );
 }
 
 test "two bytes int" {
-    const cbor = Cbor{ .UInt = 24 };
+    var cbor = Cbor.init(.{ .uint = 24 });
 
     std.debug.print("\n{d}\n", .{ cbor.size() });
 
@@ -600,22 +573,22 @@ test "two bytes int" {
     const parsed = try Cbor.parse( encoded, std.testing.allocator );
     
     try expect(
-        switch (parsed)
+        switch( parsed.value )
         {
-            .UInt => |n| n == 24,
-            .NegInt => false,
-            .Bytes => false,
-            .Text => false,
-            .Array => false,
-            .Map => false,
-            .Tag => false,
-            .Simple => false,
+            .uint => |n| n == 24,
+            .negint => false,
+            .bytes => false,
+            .text => false,
+            .array => false,
+            .map => false,
+            .tag => false,
+            .simple => false,
         }
     );
 }
 
 test "3 bytes int" {
-    const cbor = Cbor{ .UInt = 256 };
+    var cbor = Cbor.init(.{ .uint = 256 });
 
     std.debug.print("\n{d}\n", .{ cbor.size() });
 
@@ -630,16 +603,80 @@ test "3 bytes int" {
     const parsed = try Cbor.parse( encoded, std.testing.allocator );
     
     try expect(
-        switch (parsed)
+        switch( parsed.value )
         {
-            .UInt => |n| n == 256,
-            .NegInt => false,
-            .Bytes => false,
-            .Text => false,
-            .Array => false,
-            .Map => false,
-            .Tag => false,
-            .Simple => false,
+            .uint => |n| n == 256,
+            else  => false
+        }
+    );
+}
+
+test "bytes" {
+
+    const allocator: Allocator = std.testing.allocator;
+    var bytes: []u8 = try allocator.alloc( u8, 3 );
+    defer allocator.free( bytes );
+    
+    bytes[0] = 1;
+    bytes[1] = 2;
+    bytes[2] = 3;
+
+    var cbor = Cbor.init(.{ .bytes = bytes });
+
+    std.debug.print("\n{d}\n", .{ cbor.size() });
+
+    const encoded = try cbor.encode( std.testing.allocator );
+    defer std.testing.allocator.free( encoded );
+
+    try expect( encoded.len == 4 );
+    try expect( encoded[1] == 1 );
+    try expect( encoded[2] == 2 );
+    try expect( encoded[3] == 3 );
+
+    const parsed = try Cbor.parse( encoded, std.testing.allocator );
+    
+    try expect(
+        switch( parsed.value )
+        {
+            .bytes => |b| blk: {
+
+                try expect( b.len == 3 );
+                try expect( b[0] == 1 );
+                try expect( b[1] == 2 );
+                try expect( b[2] == 3 );
+
+                break :blk true;
+            },
+            else  => false
+        }
+    );
+}
+
+test "arr" {
+
+    const allocator: Allocator = std.testing.allocator;
+    
+    var array: []*Cbor = try allocator.alloc( *Cbor, 1 );
+    defer allocator.free( array );
+
+    var elem: Cbor = Cbor.uint( 1 );
+    array[0] = &elem;
+    
+    var cbor = Cbor.array( array );
+
+    std.debug.print("\n{d}\n", .{ cbor.size() });
+
+    const encoded = try cbor.encode( std.testing.allocator );
+    defer std.testing.allocator.free( encoded );
+
+    var parsed = try Cbor.parse( encoded, std.testing.allocator );
+    defer parsed.value.free( allocator );
+    
+    try expect(
+        switch( parsed.value )
+        {
+            .array => true,
+            else   =>  false
         }
     );
 }
