@@ -61,6 +61,8 @@ First add this library as dependency to your `build.zig.zon` file:
 }
 ```
 
+You can check the hash of the package in the [`src_hash.txt` file in the root of the repo](./src_hash.txt);
+
 ### As a module
 
 First add the library to your project, e.g., as a submodule:
