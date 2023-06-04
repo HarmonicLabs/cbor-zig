@@ -314,7 +314,7 @@ pub const CborValue = union(CborEnum) {
             .bytes => {},
             .text => {},
             .array => |cbor_arr| allocator.free( cbor_arr.array ),
-            .map => {},
+            .map => |cbor_map| allocator.free( cbor_map.map ),
             .tag => {},
             .simple => {},
         }
