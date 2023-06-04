@@ -188,6 +188,7 @@ const CborParser = struct {
             .text =>        if (len) |l| CborValue{ .text  = self.getBytesOfLength( l ) } else unreachable, // TODO this is not unreachable; I'm just lazy
             .array => {
                 var arr = PtrCborArrList.initCapacity( allocator, len orelse 16 ) catch return CborParserError.AllocatorOutOfMemory;
+                defer arr.deinit();
                 if( len ) |_|
                 {
                     for (arr.items) |_|
@@ -216,6 +217,8 @@ const CborParser = struct {
             },
             .map => {
                 var map = PtrCborMapEntryArrList.initCapacity( allocator, len orelse 16 ) catch return CborParserError.AllocatorOutOfMemory;
+                defer map.deinit();
+
                 if( len ) |l|
                 {
                     _ = l;
@@ -304,16 +307,16 @@ pub const CborValue = union(CborEnum) {
 
     pub fn free( self: *Self, allocator: Allocator ) void
     {
-        switch ( self )
+        switch ( self.* )
         {
-            Self.uint => {},
-            Self.negint => {},
-            Self.bytes => {},
-            Self.text => {},
-            Self.array => |cbor_arr| allocator.free( cbor_arr.array ),
-            Self.map => {},
-            Self.tag => {},
-            Self.simple => {},
+            .uint => {},
+            .negint => {},
+            .bytes => {},
+            .text => {},
+            .array => |cbor_arr| allocator.free( cbor_arr.array ),
+            .map => {},
+            .tag => {},
+            .simple => {},
         }
     }
 };
@@ -435,7 +438,13 @@ pub const Cbor = struct {
                     try appendTypeAndLength( resultRef, MajorType.array, arr.len );
 
                 for( arr ) | cbor | {
-                    try appendBytes( resultRef, try cbor.encode( allocator )  );
+                    var encodedElem = try cbor.encode( allocator );
+                    
+                    try resultRef.appendSlice( encodedElem );
+                    
+                    // `appendSlice` allocates new memory (if necessary) and clones the elements
+                    // se here we MUST free as we still have ownership of the bytes.
+                    allocator.free( encodedElem );
                 }
 
                 if( cborArr.indefinite ) try appendUint8( resultRef,0xff );
@@ -449,8 +458,19 @@ pub const Cbor = struct {
                     try appendTypeAndLength( resultRef, MajorType.map, mp.len );
 
                 for( mp ) |entry| {
-                    try appendBytes( resultRef,try entry.k.encode( allocator ) );
-                    try appendBytes( resultRef,try entry.v.encode( allocator ) );
+                    var encodedElem = try entry.k.encode( allocator );
+
+                    try resultRef.appendSlice( encodedElem );
+
+                    // see comment for `.array` above
+                    allocator.free( encodedElem );
+
+                    encodedElem = try entry.v.encode( allocator );
+
+                    try resultRef.appendSlice( encodedElem );
+
+                    // see comment for `.array` above
+                    allocator.free( encodedElem );
                 }
 
                 if( cborMap.indefinite ) try appendUint8( resultRef,0xff );
