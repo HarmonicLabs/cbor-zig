@@ -17,7 +17,7 @@ the most common use will be trough the `Cbor.parse` function and the using the r
 test "example usage" {
 
     var cbor_bytes: []u8 = try allocator.alloc( u8, 3 );
-    defer allocator.free( bytes );
+    defer allocator.free( cbor_bytes );
     
     cbor_bytes[0] = 0x19;
     cbor_bytes[1] = 0x01;
