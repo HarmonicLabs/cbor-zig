@@ -274,7 +274,7 @@ const CborParser = struct {
     }
 };
 
-const CborEnum = enum {
+pub const CborEnum = enum {
     uint,
     negint,
     bytes,
@@ -297,9 +297,10 @@ pub const CborValue = union(CborEnum) {
 
     const Self = @This();
 
-    pub fn free( self: *Self, allocator: Allocator ) void
+    /// frees the allocated memory for arrays and maps (if any)
+    pub fn free( self: Self, allocator: Allocator ) void
     {
-        switch ( self.* )
+        switch ( self )
         {
             .uint => {},
             .negint => {},
@@ -323,7 +324,10 @@ pub const Cbor = struct {
 
     const Self = @This();
 
-    fn init( value: CborValue ) Self
+    /// used to build an instance manually
+    /// you likely will obtain an instance using `Cbor.parse`,
+    /// but is nice to have the option
+    pub fn init( value: CborValue ) Self
     {
         return Self{
             .value = value,
@@ -338,7 +342,13 @@ pub const Cbor = struct {
         };
     }
 
-    fn uint( value: u64 ) Self
+    /// frees the allocated memory for arrays and maps (if any)
+    pub fn free( self: Self, allocator: Allocator ) Allocator.Error!void
+    {
+        try self.value.free( allocator ); 
+    }
+
+    pub fn uint( value: u64 ) Self
     {
         return Self{
             .value = .{ .uint = value },
@@ -346,7 +356,7 @@ pub const Cbor = struct {
         };
     }
 
-    fn negint( value: u64 ) Self
+    pub fn negint( value: u64 ) Self
     {
         return Self{
             .value = .{ .negint = value },
@@ -354,7 +364,7 @@ pub const Cbor = struct {
         };
     }
 
-    fn bytes( value: []u8 ) Self
+    pub fn bytes( value: []u8 ) Self
     {
         return Self{
             .value = .{ .bytes = value },
@@ -362,7 +372,7 @@ pub const Cbor = struct {
         };
     }
 
-    fn text( value: []u8 ) Self
+    pub fn text( value: []u8 ) Self
     {
         return Self{
             .value = .{ .text = value },
@@ -370,27 +380,28 @@ pub const Cbor = struct {
         };
     }
 
-    fn array( value: []*Cbor ) Self
+    pub fn array( value: []*Cbor ) Self
     {
         return Self.init(.{ .array = CborArray{ .array = value } });
     }
 
-    fn map( value: []CborMapEntry ) Self
+    pub fn map( value: []CborMapEntry ) Self
     {
         return Self.init(.{ .map = CborMap{ .map = value } });
     }
 
-    fn tag( value: CborTag ) Self
+    pub fn tag( value: CborTag ) Self
     {
         return Self.init(.{ .tag = value });
     }
 
-    fn simple( value: CborSimpleValue ) Self
+    pub fn simple( value: CborSimpleValue ) Self
     {
         return Self.init(.{ .simple = value });
     }
 
-    fn parse( cbor: []u8, allocator: Allocator ) CborParserError!Self
+    /// parses the given bytes as CBOR
+    pub fn parse( cbor: []u8, allocator: Allocator ) CborParserError!Self
     {
         var parser = CborParser.init( cbor );
         return Self{
@@ -399,7 +410,8 @@ pub const Cbor = struct {
         };
     }
 
-    fn encode( self: *Self, allocator: Allocator ) Allocator.Error![]u8
+    /// encodes the CBOR as bytes; the caller has ownership of the result
+    pub fn encode( self: *Self, allocator: Allocator ) Allocator.Error![]u8
     {
         // needs to be a `ArrayList(u8)` even if we know the size because
         // anyone whom uses the Cbor class *might* (even if they shouldn't)
@@ -490,7 +502,7 @@ pub const Cbor = struct {
         return slice;
     }
 
-    fn size( self: *Self ) usize
+    pub fn size( self: *Self ) usize
     {
         if( self._size ) |sz| return sz;
 
