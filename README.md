@@ -36,7 +36,7 @@ test "example usage" {
 }
 ```
 
-See [Main Definitions](#main_definitions) below to understand how to use the parsed value.
+See [Main Definitions](#main-definitions) below to understand how to use the parsed value.
 
 ## Installation
 
