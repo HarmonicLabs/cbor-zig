@@ -90,10 +90,10 @@ exe.addModule("cbor_zig", cbor_zig_module);
 
 ```zig
 pub const Cbor = struct {
-    /// modifying this field might cause undefined behaviour
+    /// modifying this field might cause unwanted behaviour
     /// **readonly**
     value: CborValue,
-    /// modifying this field might cause undefined behaviour
+    /// modifying this field might cause unwanted behaviour
     /// use `size()` to read
     _size: ?u64 = null,
 
