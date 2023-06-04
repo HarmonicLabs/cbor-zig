@@ -462,18 +462,19 @@ pub const Cbor = struct {
 
                     try resultRef.appendSlice( encodedElem );
 
-                    // see comment for `.array` above
+                    // `appendSlice` allocates new memory (if necessary) and clones the elements
+                    // se here we MUST free as we still have ownership of the bytes.
                     allocator.free( encodedElem );
 
                     encodedElem = try entry.v.encode( allocator );
 
                     try resultRef.appendSlice( encodedElem );
 
-                    // see comment for `.array` above
+                    // see comment above
                     allocator.free( encodedElem );
                 }
 
-                if( cborMap.indefinite ) try appendUint8( resultRef,0xff );
+                if( cborMap.indefinite ) try appendUint8( resultRef, 0xff );
             },
             .tag => |t| {
                 try appendTypeAndLength( resultRef, MajorType.tag, t.tag );
