@@ -42,7 +42,7 @@ pub fn cborNumToNegative( n: u64 ) i65
     return -@as( i65, n ) - 1;
 }
 
-const CborParserError = error {
+pub const CborParserError = error {
     InvalidAddtionalInfos,
     UnknownMajoType,
     UnexpectedIndefiniteLength,

@@ -2,6 +2,42 @@
 
 <small> with ❤️ by Harmonic Labs </small>
 
+## Getting started
+
+The main export of the package is the `Cbor` struct; you can import it as follows:
+
+```zig
+const cbor = @import("cbor_zig");
+const Cbor = cbor.Cbor;
+```
+
+the most common use will be trough the `Cbor.parse` function and the using the result's value to do something:
+
+```zig
+test "example usage" {
+
+    var cbor_bytes: []u8 = try allocator.alloc( u8, 3 );
+    defer allocator.free( bytes );
+    
+    cbor_bytes[0] = 0x19;
+    cbor_bytes[1] = 0x01;
+    cbor_bytes[2] = 0x00;
+
+    const parsed = try Cbor.parse( cbor_bytes, std.testing.allocator );
+    defer parsed.free( std.testing.allocator );
+
+    try expect(
+        switch( parsed.value )
+        {
+            .uint => |n| n == 256,
+            else  => false
+        }
+    );
+}
+```
+
+See [Main Definitions](#main_definitions) below to understand how to use the parsed value.
+
 ## Installation
 
 To use this library you can either add it directly as a module in your project
@@ -48,14 +84,7 @@ var cbor_zig_module = b.createModule(.{
 exe.addModule("cbor_zig", cbor_zig_module);
 ```
 
-## Getting started
-
-The main export of the package is the `Cbor` struct; you can import it as follows:
-
-```zig
-const cbor = @import("cbor_zig");
-const Cbor = cbor.Cbor;
-```
+## Main definitions
 
 `Cbor`'s instance interface looks like this
 
